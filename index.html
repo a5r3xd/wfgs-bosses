@@ -1,0 +1,2917 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>wfgs boss fights</title>
+
+<style>
+html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: black;
+    font-family: Arial, sans-serif;
+}
+
+canvas {
+    display: block;
+    background: black;
+}
+</style>
+</head>
+
+<body>
+
+<canvas id="game"></canvas>
+
+<script>
+
+// ============================================================
+// CANVAS
+// ============================================================
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+
+window.addEventListener("resize", resize);
+resize();
+
+
+// ============================================================
+// GAME STATE
+// ============================================================
+
+let gameState = "menu";
+let selectedBoss = null;
+let unlockedTri = false;
+
+
+// ============================================================
+// INPUT
+// ============================================================
+
+const keys = {};
+
+let mouseX = 0;
+let mouseY = 0;
+let mouseDown = false;
+
+window.addEventListener("keydown", e => {
+    const key = e.key.toLowerCase();
+
+    keys[key] = true;
+
+    if (["w", "a", "s", "d"].includes(key)) {
+        e.preventDefault();
+    }
+});
+
+window.addEventListener("keyup", e => {
+    keys[e.key.toLowerCase()] = false;
+});
+
+canvas.addEventListener("mousemove", e => {
+    mouseX = e.clientX;
+    mouseY = e.clientY;
+});
+
+canvas.addEventListener("mousedown", e => {
+    if (e.button !== 0) return;
+
+    mouseDown = true;
+
+    handleClick(e.clientX, e.clientY);
+});
+
+window.addEventListener("mouseup", e => {
+    if (e.button === 0) {
+        mouseDown = false;
+    }
+});
+
+
+// ============================================================
+// DIFFICULTIES
+// ============================================================
+
+const difficultyColors = {
+    Trivial: "#b8f5b8",
+    Easy: "#32d74b",
+    Medium: "#ffd60a",
+    Hard: "#ff9500",
+    Insane: "#ff3b30",
+    SUFFER: "#a855f7"
+};
+
+
+// ============================================================
+// PLAYER
+// ============================================================
+
+const player = {
+
+    x: 0,
+    y: 0,
+
+    vx: 0,
+    vy: 0,
+
+    radius: 5,
+
+    acceleration: 0.35,
+    friction: 0.88,
+    maxSpeed: 6,
+
+    maxHP: 100,
+    hp: 100
+};
+
+
+// ============================================================
+// BOSSES
+// ============================================================
+
+const bosses = {
+
+    Tetrapleuron: {
+
+        name: "Tetrapleuron",
+        difficulty: "Trivial",
+
+        shape: "square",
+        color: "red",
+
+        maxHP: 500,
+        hp: 500,
+
+        size: 80,
+
+        x: 0,
+        y: 0,
+
+        shield: 0,
+        maxShield: 150,
+
+        shieldTriggered: false
+    },
+
+    Tri: {
+
+        name: "Tri",
+        difficulty: "Easy",
+
+        shape: "triangle",
+        color: "#168cff",
+
+        maxHP: 600,
+        hp: 600,
+
+        size: 75,
+
+        x: 0,
+        y: 0,
+
+        angle: 0,
+
+        rotationSpeed:
+            50 * Math.PI / 180,
+
+        moveSpeed: 20,
+
+        targetX: 0,
+        targetY: 0,
+
+        fireInterval: 100,
+        nextFire: 0,
+
+        shield: 0,
+        maxShield: 0,
+
+        shieldTriggered: false
+    }
+};
+
+let boss = bosses.Tetrapleuron;
+
+
+// ============================================================
+// PROJECTILES
+// ============================================================
+
+const rays = [];
+const bullets = [];
+
+const PLAYER_FIRE_INTERVAL = 100;
+const RAY_LIFETIME = 50;
+
+const BOSS_BULLET_SPEED = 3;
+const BOSS_BULLET_DAMAGE = 5;
+
+
+// ============================================================
+// MENU BUTTONS
+// ============================================================
+
+const playButton = {
+    x: 0,
+    y: 0,
+    width: 260,
+    height: 70
+};
+
+const bossButtons = {
+
+    Tetrapleuron: {
+        x: 0,
+        y: 0,
+        width: 390,
+        height: 175
+    },
+
+    Tri: {
+        x: 0,
+        y: 0,
+        width: 390,
+        height: 175
+    }
+};
+
+
+function pointInRect(x, y, r) {
+
+    return (
+        x >= r.x &&
+        x <= r.x + r.width &&
+        y >= r.y &&
+        y <= r.y + r.height
+    );
+}
+
+
+// ============================================================
+// CLICK HANDLER
+// ============================================================
+
+function handleClick(x, y) {
+
+    if (gameState === "menu") {
+
+        if (
+            pointInRect(
+                x,
+                y,
+                playButton
+            )
+        ) {
+            gameState = "bossSelect";
+        }
+
+        return;
+    }
+
+
+    if (gameState === "bossSelect") {
+
+        if (
+            pointInRect(
+                x,
+                y,
+                bossButtons.Tetrapleuron
+            )
+        ) {
+
+            startBoss("Tetrapleuron");
+            return;
+        }
+
+
+        if (
+            unlockedTri &&
+            pointInRect(
+                x,
+                y,
+                bossButtons.Tri
+            )
+        ) {
+
+            startBoss("Tri");
+            return;
+        }
+
+        return;
+    }
+
+
+    if (
+        gameState === "dead" ||
+        gameState === "victory"
+    ) {
+
+        gameState = "bossSelect";
+    }
+}
+
+
+// ============================================================
+// START BOSS
+// ============================================================
+
+function startBoss(name) {
+
+    selectedBoss = name;
+
+    boss = bosses[name];
+
+    player.x =
+        canvas.width / 2;
+
+    player.y =
+        canvas.height - 150;
+
+    player.vx = 0;
+    player.vy = 0;
+
+    player.hp =
+        player.maxHP;
+
+    rays.length = 0;
+    bullets.length = 0;
+
+    mouseDown = false;
+
+    boss.hp =
+        boss.maxHP;
+
+    boss.x =
+        canvas.width / 2;
+
+    boss.y = 150;
+
+    boss.shield = 0;
+
+    boss.shieldTriggered =
+        false;
+
+
+    if (name === "Tetrapleuron") {
+
+        startTetrapleuron();
+
+    } else {
+
+        startTri();
+    }
+
+
+    gameState = "playing";
+}
+
+
+// ============================================================
+// TETRAPLEURON VARIABLES
+// ============================================================
+
+let tetAttackState = "cooldown";
+
+let tetTimer = 0;
+
+let tetSpraying = false;
+
+let tetBulletsLeft = 0;
+
+let tetNextShot = 0;
+
+let spraysSinceSpecial = 0;
+
+let teleportVisible = false;
+
+let teleportX = 0;
+let teleportY = 0;
+
+let shieldPhase = false;
+
+let shieldVolleys = 0;
+
+let shieldNextVolley = 0;
+
+
+// ============================================================
+// START TETRAPLEURON
+// ============================================================
+
+function startTetrapleuron() {
+
+    tetAttackState =
+        "cooldown";
+
+    tetTimer =
+        performance.now() + 1000;
+
+    tetSpraying = false;
+
+    tetBulletsLeft = 0;
+
+    spraysSinceSpecial = 0;
+
+    teleportVisible = false;
+
+    shieldPhase = false;
+
+    shieldVolleys = 0;
+}
+
+
+// ============================================================
+// TETRAPLEURON BULLET SPEED
+// ============================================================
+
+function randomBossBulletSpeed() {
+
+    return (
+        BOSS_BULLET_SPEED *
+        (
+            0.8 +
+            Math.random() * 0.4
+        )
+    );
+}
+
+
+// ============================================================
+// CREATE BULLET
+// ============================================================
+
+function createBullet(
+    angle,
+    speed = randomBossBulletSpeed(),
+    damage = BOSS_BULLET_DAMAGE
+) {
+
+    bullets.push({
+
+        x: boss.x,
+        y: boss.y,
+
+        vx:
+            Math.cos(angle) *
+            speed,
+
+        vy:
+            Math.sin(angle) *
+            speed,
+
+        radius: 3,
+
+        damage: damage,
+
+        trail: []
+    });
+}
+
+
+// ============================================================
+// TETRAPLEURON SPRAY
+// ============================================================
+
+function startTetSpray() {
+
+    tetAttackState =
+        "spraying";
+
+    tetSpraying = true;
+
+    tetBulletsLeft = 20;
+
+    tetNextShot =
+        performance.now();
+}
+
+
+function fireTetSprayBullet() {
+
+    const dx =
+        player.x -
+        boss.x;
+
+    const dy =
+        player.y -
+        boss.y;
+
+    const baseAngle =
+        Math.atan2(dy, dx);
+
+    const spread =
+        (
+            Math.random() - 0.5
+        ) *
+        (
+            30 *
+            Math.PI /
+            180
+        );
+
+    createBullet(
+        baseAngle + spread
+    );
+}
+
+
+function updateTetSpray() {
+
+    if (!tetSpraying) {
+        return;
+    }
+
+    const now =
+        performance.now();
+
+    if (
+        now <
+        tetNextShot
+    ) {
+        return;
+    }
+
+    fireTetSprayBullet();
+
+    tetBulletsLeft--;
+
+    tetNextShot =
+        now + 20;
+
+
+    if (
+        tetBulletsLeft <= 0
+    ) {
+
+        tetSpraying = false;
+
+        spraysSinceSpecial++;
+
+
+        const threshold =
+            boss.hp >
+            boss.maxHP * 0.5
+                ? 5
+                : 8;
+
+
+        if (
+            spraysSinceSpecial >=
+            threshold
+        ) {
+
+            startTetSpecial();
+
+        } else {
+
+            tetAttackState =
+                "cooldown";
+
+            tetTimer =
+                now + 1000;
+        }
+    }
+}
+
+
+// ============================================================
+// TETRAPLEURON TELEPORT
+// ============================================================
+
+function chooseTeleportPosition() {
+
+    const margin =
+        boss.size / 2 + 20;
+
+    do {
+
+        teleportX =
+            margin +
+            Math.random() *
+            (
+                canvas.width -
+                margin * 2
+            );
+
+        teleportY =
+            margin +
+            Math.random() *
+            (
+                canvas.height -
+                margin * 2
+            );
+
+    } while (
+        Math.hypot(
+            teleportX - player.x,
+            teleportY - player.y
+        ) < 150
+    );
+}
+
+
+function startTetSpecial() {
+
+    chooseTeleportPosition();
+
+    teleportVisible = true;
+
+    tetAttackState =
+        "specialCharge";
+
+    tetTimer =
+        performance.now() +
+        3000;
+}
+
+
+function fire360Volley(count) {
+
+    for (
+        let i = 0;
+        i < count;
+        i++
+    ) {
+
+        const angle =
+            (
+                i /
+                count
+            ) *
+            Math.PI *
+            2;
+
+        createBullet(angle);
+    }
+}
+
+
+function updateTetSpecial() {
+
+    const now =
+        performance.now();
+
+
+    if (
+        tetAttackState ===
+        "specialCharge"
+    ) {
+
+        if (
+            now >=
+            tetTimer
+        ) {
+
+            boss.x =
+                teleportX;
+
+            boss.y =
+                teleportY;
+
+            teleportVisible =
+                false;
+
+            fire360Volley(200);
+
+            tetAttackState =
+                "specialRecovery";
+
+            tetTimer =
+                now + 2000;
+        }
+
+        return;
+    }
+
+
+    if (
+        tetAttackState ===
+        "specialRecovery"
+    ) {
+
+        if (
+            now >=
+            tetTimer
+        ) {
+
+            spraysSinceSpecial = 0;
+
+            tetAttackState =
+                "cooldown";
+
+            tetTimer =
+                now + 1000;
+        }
+    }
+}
+
+
+// ============================================================
+// TETRAPLEURON SHIELD PHASE
+// ============================================================
+
+function startShieldPhase() {
+
+    if (boss.shieldTriggered) {
+        return;
+    }
+
+    boss.shieldTriggered =
+        true;
+
+    boss.shield =
+        boss.maxShield;
+
+    shieldPhase = true;
+
+    shieldVolleys = 0;
+
+    shieldNextVolley =
+        performance.now();
+
+    tetSpraying = false;
+
+    teleportVisible = false;
+
+    tetAttackState =
+        "shield";
+}
+
+
+function updateShieldPhase() {
+
+    if (!shieldPhase) {
+        return;
+    }
+
+    const now =
+        performance.now();
+
+    if (
+        now <
+        shieldNextVolley
+    ) {
+        return;
+    }
+
+    fire360Volley(200);
+
+    shieldVolleys++;
+
+
+    if (
+        shieldVolleys >= 3
+    ) {
+
+        shieldPhase = false;
+
+        spraysSinceSpecial = 0;
+
+        tetAttackState =
+            "cooldown";
+
+        tetTimer =
+            now + 1000;
+
+    } else {
+
+        shieldNextVolley =
+            now + 1300;
+    }
+}
+
+
+// ============================================================
+// UPDATE TETRAPLEURON
+// ============================================================
+
+function updateTetrapleuron() {
+
+    if (boss.hp <= 0) {
+        return;
+    }
+
+
+    if (
+        !boss.shieldTriggered &&
+        boss.hp <=
+        boss.maxHP * 0.5
+    ) {
+
+        startShieldPhase();
+    }
+
+
+    if (shieldPhase) {
+
+        updateShieldPhase();
+
+        return;
+    }
+
+
+    const now =
+        performance.now();
+
+
+    if (
+        tetAttackState ===
+        "cooldown" &&
+        now >=
+        tetTimer
+    ) {
+
+        startTetSpray();
+    }
+
+
+    updateTetSpray();
+
+    updateTetSpecial();
+}
+
+
+// ============================================================
+// TRI
+// ============================================================
+
+function startTri() {
+
+    boss.angle = 0;
+
+    boss.nextFire =
+        performance.now();
+
+    chooseTriTarget();
+}
+
+
+// ============================================================
+// TRI VERTICES
+// ============================================================
+
+function getTriVertices() {
+
+    const radius =
+        boss.size / 2;
+
+    const vertices = [];
+
+    for (
+        let i = 0;
+        i < 3;
+        i++
+    ) {
+
+        const angle =
+            boss.angle -
+            Math.PI / 2 +
+            i *
+            (
+                Math.PI *
+                2 /
+                3
+            );
+
+        vertices.push({
+
+            x:
+                boss.x +
+                Math.cos(angle) *
+                radius,
+
+            y:
+                boss.y +
+                Math.sin(angle) *
+                radius
+        });
+    }
+
+    return vertices;
+}
+
+
+// ============================================================
+// POINT IN TRIANGLE
+// ============================================================
+
+function pointInTriangle(
+    px,
+    py
+) {
+
+    const v =
+        getTriVertices();
+
+    function sign(
+        p1,
+        p2,
+        p3
+    ) {
+
+        return (
+            (p1.x - p3.x) *
+            (p2.y - p3.y)
+            -
+            (p2.x - p3.x) *
+            (p1.y - p3.y)
+        );
+    }
+
+    const p = {
+        x: px,
+        y: py
+    };
+
+    const d1 =
+        sign(
+            p,
+            v[0],
+            v[1]
+        );
+
+    const d2 =
+        sign(
+            p,
+            v[1],
+            v[2]
+        );
+
+    const d3 =
+        sign(
+            p,
+            v[2],
+            v[0]
+        );
+
+    const hasNegative =
+        d1 < 0 ||
+        d2 < 0 ||
+        d3 < 0;
+
+    const hasPositive =
+        d1 > 0 ||
+        d2 > 0 ||
+        d3 > 0;
+
+    return !(
+        hasNegative &&
+        hasPositive
+    );
+}
+
+
+// ============================================================
+// TRI RANDOM DESTINATION
+// ============================================================
+
+function chooseTriTarget() {
+
+    const margin =
+        boss.size / 2 + 10;
+
+    boss.targetX =
+        margin +
+        Math.random() *
+        (
+            canvas.width -
+            margin * 2
+        );
+
+    boss.targetY =
+        margin +
+        Math.random() *
+        (
+            canvas.height -
+            margin * 2
+        );
+}
+
+
+// ============================================================
+// TRI MOVEMENT
+// ============================================================
+
+function updateTriMovement() {
+
+    const dx =
+        boss.targetX -
+        boss.x;
+
+    const dy =
+        boss.targetY -
+        boss.y;
+
+    const distance =
+        Math.hypot(dx, dy);
+
+
+    if (
+        distance <=
+        boss.moveSpeed / 60
+    ) {
+
+        boss.x =
+            boss.targetX;
+
+        boss.y =
+            boss.targetY;
+
+        // Instantly select another position
+        chooseTriTarget();
+
+    } else {
+
+        boss.x +=
+            dx /
+            distance *
+            boss.moveSpeed /
+            60;
+
+        boss.y +=
+            dy /
+            distance *
+            boss.moveSpeed /
+            60;
+    }
+}
+
+
+// ============================================================
+// TRI ATTACK
+// ============================================================
+
+function fireTriAttack() {
+
+    const vertices =
+        getTriVertices();
+
+
+    /*
+        Each triangle side gets one bullet.
+
+        The outward normal of each side is
+        calculated so the bullet travels
+        away from the triangle.
+
+        A random ±10° offset gives a
+        total 20° spread.
+    */
+
+    for (
+        let i = 0;
+        i < 3;
+        i++
+    ) {
+
+        const a =
+            vertices[i];
+
+        const b =
+            vertices[
+                (i + 1) % 3
+            ];
+
+
+        const sideX =
+            b.x - a.x;
+
+        const sideY =
+            b.y - a.y;
+
+
+        // Perpendicular vector
+        let nx =
+            sideY;
+
+        let ny =
+            -sideX;
+
+
+        const length =
+            Math.hypot(
+                nx,
+                ny
+            );
+
+        nx /= length;
+        ny /= length;
+
+
+        // Make sure it points outward
+        const midpointX =
+            (a.x + b.x) / 2;
+
+        const midpointY =
+            (a.y + b.y) / 2;
+
+
+        const fromCenterX =
+            midpointX -
+            boss.x;
+
+        const fromCenterY =
+            midpointY -
+            boss.y;
+
+
+        if (
+            nx * fromCenterX +
+            ny * fromCenterY <
+            0
+        ) {
+
+            nx = -nx;
+            ny = -ny;
+        }
+
+
+        const baseAngle =
+            Math.atan2(
+                ny,
+                nx
+            );
+
+
+        // 20 degree total spread
+        const spread =
+            (
+                Math.random() -
+                0.5
+            ) *
+            (
+                20 *
+                Math.PI /
+                180
+            );
+
+
+        createBullet(
+            baseAngle + spread
+        );
+    }
+}
+
+
+function updateTriAttack() {
+
+    const now =
+        performance.now();
+
+
+    if (
+        now >=
+        boss.nextFire
+    ) {
+
+        fireTriAttack();
+
+        boss.nextFire =
+            now +
+            boss.fireInterval;
+    }
+}
+
+
+// ============================================================
+// UPDATE TRI
+// ============================================================
+
+function updateTri() {
+
+    if (boss.hp <= 0) {
+        return;
+    }
+
+    // 50 degrees per second
+    boss.angle +=
+        boss.rotationSpeed /
+        60;
+
+    updateTriMovement();
+
+    updateTriAttack();
+}
+
+
+// ============================================================
+// PLAYER SHOOTING
+// ============================================================
+
+let lastPlayerShot =
+    -Infinity;
+
+
+function shoot() {
+
+    const now =
+        performance.now();
+
+
+    if (
+        now -
+        lastPlayerShot <
+        PLAYER_FIRE_INTERVAL
+    ) {
+        return;
+    }
+
+
+    lastPlayerShot =
+        now;
+
+
+    const dx =
+        mouseX -
+        player.x;
+
+    const dy =
+        mouseY -
+        player.y;
+
+
+    const distance =
+        Math.hypot(
+            dx,
+            dy
+        );
+
+
+    if (!distance) {
+        return;
+    }
+
+
+    rays.push({
+
+        x: player.x,
+        y: player.y,
+
+        dx:
+            dx /
+            distance,
+
+        dy:
+            dy /
+            distance,
+
+        length: 2000,
+
+        start:
+            now,
+
+        damage: false
+    });
+}
+
+
+// ============================================================
+// BOSS DAMAGE
+// ============================================================
+
+function damageBoss(amount) {
+
+    if (boss.shield > 0) {
+
+        const shieldDamage =
+            Math.min(
+                amount,
+                boss.shield
+            );
+
+        boss.shield -=
+            shieldDamage;
+
+        amount -=
+            shieldDamage;
+    }
+
+
+    if (amount > 0) {
+
+        boss.hp =
+            Math.max(
+                0,
+                boss.hp -
+                amount
+            );
+    }
+}
+
+
+// ============================================================
+// RAY COLLISION
+// ============================================================
+
+function checkRayHit(ray) {
+
+    if (ray.damage) {
+        return;
+    }
+
+
+    for (
+        let distance = 0;
+        distance <= 2000;
+        distance += 2
+    ) {
+
+        const x =
+            ray.x +
+            ray.dx *
+            distance;
+
+        const y =
+            ray.y +
+            ray.dy *
+            distance;
+
+
+        // Boundary
+
+        if (
+            x < 0 ||
+            x > canvas.width ||
+            y < 0 ||
+            y > canvas.height
+        ) {
+
+            ray.length =
+                Math.hypot(
+                    x - ray.x,
+                    y - ray.y
+                );
+
+            return;
+        }
+
+
+        // Boss
+
+        let hit = false;
+
+
+        if (
+            boss.hp > 0 ||
+            boss.shield > 0
+        ) {
+
+            if (
+                boss.shape ===
+                "square"
+            ) {
+
+                hit =
+                    x >=
+                    boss.x -
+                    boss.size / 2 &&
+
+                    x <=
+                    boss.x +
+                    boss.size / 2 &&
+
+                    y >=
+                    boss.y -
+                    boss.size / 2 &&
+
+                    y <=
+                    boss.y +
+                    boss.size / 2;
+
+            } else {
+
+                hit =
+                    pointInTriangle(
+                        x,
+                        y
+                    );
+            }
+        }
+
+
+        if (hit) {
+
+            damageBoss(1);
+
+            ray.length =
+                distance;
+
+            ray.damage = true;
+
+            return;
+        }
+    }
+}
+
+
+// ============================================================
+// BOSS / PLAYER COLLISION
+// ============================================================
+
+function resolveBossCollision() {
+
+    if (
+        boss.hp <= 0
+    ) {
+        return;
+    }
+
+
+    if (
+        boss.shape ===
+        "triangle"
+    ) {
+
+        if (
+            pointInTriangle(
+                player.x,
+                player.y
+            )
+        ) {
+
+            const dx =
+                player.x -
+                boss.x;
+
+            const dy =
+                player.y -
+                boss.y;
+
+            const distance =
+                Math.hypot(
+                    dx,
+                    dy
+                ) || 1;
+
+
+            player.x =
+                boss.x +
+                dx /
+                distance *
+                (
+                    boss.size / 2 +
+                    player.radius
+                );
+
+            player.y =
+                boss.y +
+                dy /
+                distance *
+                (
+                    boss.size / 2 +
+                    player.radius
+                );
+        }
+
+        return;
+    }
+
+
+    const half =
+        boss.size / 2;
+
+
+    const closestX =
+        Math.max(
+            boss.x - half,
+            Math.min(
+                player.x,
+                boss.x + half
+            )
+        );
+
+    const closestY =
+        Math.max(
+            boss.y - half,
+            Math.min(
+                player.y,
+                boss.y + half
+            )
+        );
+
+
+    const dx =
+        player.x -
+        closestX;
+
+    const dy =
+        player.y -
+        closestY;
+
+
+    if (
+        dx * dx +
+        dy * dy <
+        player.radius *
+        player.radius
+    ) {
+
+        if (
+            Math.abs(dx) >
+            Math.abs(dy)
+        ) {
+
+            player.x =
+                boss.x +
+                (
+                    dx > 0
+                        ? half +
+                          player.radius
+                        : -half -
+                          player.radius
+                );
+
+            player.vx = 0;
+
+        } else {
+
+            player.y =
+                boss.y +
+                (
+                    dy > 0
+                        ? half +
+                          player.radius
+                        : -half -
+                          player.radius
+                );
+
+            player.vy = 0;
+        }
+    }
+}
+
+
+// ============================================================
+// BULLET COLLISION
+// ============================================================
+
+function checkBulletCollision(
+    bullet
+) {
+
+    const distance =
+        Math.hypot(
+            bullet.x -
+            player.x,
+
+            bullet.y -
+            player.y
+        );
+
+
+    if (
+        distance <=
+        player.radius +
+        bullet.radius
+    ) {
+
+        player.hp =
+            Math.max(
+                0,
+                player.hp -
+                bullet.damage
+            );
+
+        return true;
+    }
+
+
+    return false;
+}
+
+
+// ============================================================
+// UPDATE BULLETS
+// ============================================================
+
+function updateBullets() {
+
+    for (
+        let i =
+            bullets.length - 1;
+        i >= 0;
+        i--
+    ) {
+
+        const bullet =
+            bullets[i];
+
+
+        // Add trail point
+
+        bullet.trail.unshift({
+
+            x: bullet.x,
+            y: bullet.y
+        });
+
+
+        // Limit trail
+
+        if (
+            bullet.trail.length >
+            9
+        ) {
+
+            bullet.trail.pop();
+        }
+
+
+        bullet.x +=
+            bullet.vx;
+
+        bullet.y +=
+            bullet.vy;
+
+
+        if (
+            checkBulletCollision(
+                bullet
+            )
+        ) {
+
+            bullets.splice(
+                i,
+                1
+            );
+
+            continue;
+        }
+
+
+        if (
+            bullet.x < -40 ||
+            bullet.x >
+            canvas.width + 40 ||
+            bullet.y < -40 ||
+            bullet.y >
+            canvas.height + 40
+        ) {
+
+            bullets.splice(
+                i,
+                1
+            );
+        }
+    }
+}
+
+
+// ============================================================
+// UPDATE GAME
+// ============================================================
+
+function update() {
+
+    if (
+        gameState !==
+        "playing"
+    ) {
+        return;
+    }
+
+
+    // -------------------------
+    // PLAYER MOVEMENT
+    // -------------------------
+
+    let ax = 0;
+    let ay = 0;
+
+
+    if (keys["w"]) {
+        ay -= 1;
+    }
+
+    if (keys["s"]) {
+        ay += 1;
+    }
+
+    if (keys["a"]) {
+        ax -= 1;
+    }
+
+    if (keys["d"]) {
+        ax += 1;
+    }
+
+
+    // Normalize diagonal movement
+
+    const movementMagnitude =
+        Math.hypot(
+            ax,
+            ay
+        );
+
+
+    if (
+        movementMagnitude > 0
+    ) {
+
+        ax /=
+            movementMagnitude;
+
+        ay /=
+            movementMagnitude;
+
+
+        player.vx +=
+            ax *
+            player.acceleration;
+
+        player.vy +=
+            ay *
+            player.acceleration;
+    }
+
+
+    // Friction
+
+    player.vx *=
+        player.friction;
+
+    player.vy *=
+        player.friction;
+
+
+    // Max speed
+
+    const speed =
+        Math.hypot(
+            player.vx,
+            player.vy
+        );
+
+
+    if (
+        speed >
+        player.maxSpeed
+    ) {
+
+        player.vx =
+            player.vx /
+            speed *
+            player.maxSpeed;
+
+        player.vy =
+            player.vy /
+            speed *
+            player.maxSpeed;
+    }
+
+
+    player.x +=
+        player.vx;
+
+    player.y +=
+        player.vy;
+
+
+    // Screen boundaries
+
+    if (
+        player.x <
+        player.radius
+    ) {
+
+        player.x =
+            player.radius;
+
+        player.vx = 0;
+    }
+
+
+    if (
+        player.x >
+        canvas.width -
+        player.radius
+    ) {
+
+        player.x =
+            canvas.width -
+            player.radius;
+
+        player.vx = 0;
+    }
+
+
+    if (
+        player.y <
+        player.radius
+    ) {
+
+        player.y =
+            player.radius;
+
+        player.vy = 0;
+    }
+
+
+    if (
+        player.y >
+        canvas.height -
+        player.radius
+    ) {
+
+        player.y =
+            canvas.height -
+            player.radius;
+
+        player.vy = 0;
+    }
+
+
+    resolveBossCollision();
+
+
+    // Player shooting
+
+    if (
+        mouseDown &&
+        player.hp > 0 &&
+        (
+            boss.hp > 0 ||
+            boss.shield > 0
+        )
+    ) {
+
+        shoot();
+    }
+
+
+    // Boss update
+
+    if (
+        boss.name ===
+        "Tetrapleuron"
+    ) {
+
+        updateTetrapleuron();
+
+    } else {
+
+        updateTri();
+    }
+
+
+    // Rays
+
+    for (
+        const ray of rays
+    ) {
+
+        checkRayHit(ray);
+    }
+
+
+    // Remove expired rays
+
+    const now =
+        performance.now();
+
+
+    for (
+        let i =
+            rays.length - 1;
+        i >= 0;
+        i--
+    ) {
+
+        if (
+            now -
+            rays[i].start >=
+            RAY_LIFETIME
+        ) {
+
+            rays.splice(
+                i,
+                1
+            );
+        }
+    }
+
+
+    updateBullets();
+
+
+    // Death
+
+    if (
+        player.hp <= 0
+    ) {
+
+        gameState = "dead";
+    }
+
+
+    // Victory
+
+    if (
+        boss.hp <= 0 &&
+        boss.shield <= 0
+    ) {
+
+        gameState =
+            "victory";
+
+
+        // Tetrapleuron unlocks Tri
+
+        if (
+            boss.name ===
+            "Tetrapleuron"
+        ) {
+
+            unlockedTri = true;
+        }
+    }
+}
+
+
+// ============================================================
+// DRAW BUTTON
+// ============================================================
+
+function drawButton(
+    r,
+    fill = "#151515",
+    stroke = "#555"
+) {
+
+    ctx.fillStyle =
+        fill;
+
+    ctx.beginPath();
+
+    ctx.roundRect(
+        r.x,
+        r.y,
+        r.width,
+        r.height,
+        10
+    );
+
+    ctx.fill();
+
+
+    ctx.strokeStyle =
+        stroke;
+
+    ctx.lineWidth = 2;
+
+    ctx.stroke();
+}
+
+
+// ============================================================
+// MAIN MENU
+// ============================================================
+
+function drawMainMenu() {
+
+    ctx.fillStyle = "black";
+
+    ctx.fillRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+
+    ctx.fillStyle = "white";
+
+    ctx.font =
+        "bold 52px Arial";
+
+    ctx.fillText(
+        "wfgs boss fights",
+        canvas.width / 2,
+        canvas.height / 2 - 120
+    );
+
+
+    ctx.fillStyle = "#777";
+
+    ctx.font =
+        "18px Arial";
+
+    ctx.fillText(
+        "BOSS FIGHT ARENA",
+        canvas.width / 2,
+        canvas.height / 2 - 65
+    );
+
+
+    playButton.x =
+        canvas.width / 2 -
+        playButton.width / 2;
+
+    playButton.y =
+        canvas.height / 2 -
+        20;
+
+
+    drawButton(
+        playButton
+    );
+
+
+    ctx.fillStyle = "white";
+
+    ctx.font =
+        "bold 26px Arial";
+
+    ctx.fillText(
+        "PLAY",
+        canvas.width / 2,
+        playButton.y +
+        playButton.height / 2
+    );
+}
+
+
+// ============================================================
+// BOSS SELECT MENU
+// ============================================================
+
+function drawBossSelect() {
+
+    ctx.fillStyle = "black";
+
+    ctx.fillRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+
+    ctx.fillStyle = "white";
+
+    ctx.font =
+        "bold 40px Arial";
+
+    ctx.fillText(
+        "SELECT A BOSS",
+        canvas.width / 2,
+        60
+    );
+
+
+    bossButtons.Tetrapleuron.x =
+        canvas.width / 2 -
+        bossButtons.Tetrapleuron.width / 2;
+
+    bossButtons.Tetrapleuron.y =
+        125;
+
+
+    bossButtons.Tri.x =
+        canvas.width / 2 -
+        bossButtons.Tri.width / 2;
+
+    bossButtons.Tri.y =
+        330;
+
+
+    drawBossCard(
+        bossButtons.Tetrapleuron,
+        bosses.Tetrapleuron,
+        true
+    );
+
+
+    drawBossCard(
+        bossButtons.Tri,
+        bosses.Tri,
+        unlockedTri
+    );
+}
+
+
+// ============================================================
+// BOSS CARD
+// ============================================================
+
+function drawBossCard(
+    rect,
+    b,
+    unlocked
+) {
+
+    drawButton(
+        rect,
+        unlocked
+            ? "#101010"
+            : "#080808",
+        unlocked
+            ? "#444"
+            : "#222"
+    );
+
+
+    ctx.save();
+
+    ctx.globalAlpha =
+        unlocked
+            ? 1
+            : 0.3;
+
+
+    // Boss preview
+
+    if (
+        b.shape ===
+        "square"
+    ) {
+
+        ctx.fillStyle =
+            b.color;
+
+        ctx.fillRect(
+            canvas.width / 2 - 30,
+            rect.y + 18,
+            60,
+            60
+        );
+
+    } else {
+
+        ctx.fillStyle =
+            b.color;
+
+        ctx.beginPath();
+
+        const cx =
+            canvas.width / 2;
+
+        const cy =
+            rect.y + 48;
+
+        const radius = 34;
+
+
+        for (
+            let i = 0;
+            i < 3;
+            i++
+        ) {
+
+            const angle =
+                -Math.PI / 2 +
+                i *
+                (
+                    Math.PI *
+                    2 /
+                    3
+                );
+
+
+            const x =
+                cx +
+                Math.cos(angle) *
+                radius;
+
+            const y =
+                cy +
+                Math.sin(angle) *
+                radius;
+
+
+            if (i === 0) {
+                ctx.moveTo(
+                    x,
+                    y
+                );
+            } else {
+                ctx.lineTo(
+                    x,
+                    y
+                );
+            }
+        }
+
+
+        ctx.closePath();
+
+        ctx.fill();
+    }
+
+
+    // Name
+
+    ctx.fillStyle =
+        "white";
+
+    ctx.font =
+        "bold 24px Arial";
+
+    ctx.fillText(
+        b.name,
+        canvas.width / 2,
+        rect.y + 100
+    );
+
+
+    // Difficulty
+
+    ctx.fillStyle =
+        difficultyColors[
+            b.difficulty
+        ];
+
+    ctx.font =
+        "bold 18px Arial";
+
+    ctx.fillText(
+        b.difficulty,
+        canvas.width / 2,
+        rect.y + 128
+    );
+
+
+    // HP
+
+    ctx.fillStyle =
+        "#777";
+
+    ctx.font =
+        "14px Arial";
+
+    ctx.fillText(
+        `${b.maxHP} HP`,
+        canvas.width / 2,
+        rect.y + 151
+    );
+
+
+    ctx.restore();
+
+
+    if (!unlocked) {
+
+        ctx.fillStyle =
+            "#777";
+
+        ctx.font =
+            "bold 14px Arial";
+
+        ctx.fillText(
+            "LOCKED — DEFEAT TETRAPLEURON",
+            canvas.width / 2,
+            rect.y + 90
+        );
+    }
+}
+
+
+// ============================================================
+// DRAW TRIANGLE
+// ============================================================
+
+function drawTri() {
+
+    const vertices =
+        getTriVertices();
+
+
+    ctx.fillStyle =
+        boss.color;
+
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+        vertices[0].x,
+        vertices[0].y
+    );
+
+    ctx.lineTo(
+        vertices[1].x,
+        vertices[1].y
+    );
+
+    ctx.lineTo(
+        vertices[2].x,
+        vertices[2].y
+    );
+
+    ctx.closePath();
+
+    ctx.fill();
+}
+
+
+// ============================================================
+// BULLET TRAILS
+// ============================================================
+
+function drawBulletTrail(
+    bullet
+) {
+
+    for (
+        let i =
+            bullet.trail.length - 1;
+        i >= 0;
+        i--
+    ) {
+
+        const point =
+            bullet.trail[i];
+
+
+        const progress =
+            1 -
+            i /
+            bullet.trail.length;
+
+
+        const radius =
+            bullet.radius *
+            progress;
+
+
+        const alpha =
+            0.45 *
+            progress;
+
+
+        ctx.beginPath();
+
+        ctx.arc(
+            point.x,
+            point.y,
+            radius,
+            0,
+            Math.PI * 2
+        );
+
+
+        ctx.fillStyle =
+            `rgba(255,176,0,${alpha})`;
+
+        ctx.fill();
+    }
+}
+
+
+// ============================================================
+// GAME DRAW
+// ============================================================
+
+function drawGame() {
+
+    ctx.fillStyle =
+        "black";
+
+    ctx.fillRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+
+    // Teleport indicator
+
+    if (
+        teleportVisible
+    ) {
+
+        ctx.fillStyle =
+            "rgba(255,0,0,0.25)";
+
+        ctx.fillRect(
+            teleportX -
+            boss.size / 2,
+
+            teleportY -
+            boss.size / 2,
+
+            boss.size,
+            boss.size
+        );
+
+
+        ctx.strokeStyle =
+            "rgba(255,0,0,0.8)";
+
+        ctx.lineWidth = 2;
+
+        ctx.strokeRect(
+            teleportX -
+            boss.size / 2,
+
+            teleportY -
+            boss.size / 2,
+
+            boss.size,
+            boss.size
+        );
+    }
+
+
+    // Boss
+
+    if (
+        boss.hp > 0
+    ) {
+
+        if (
+            boss.shape ===
+            "square"
+        ) {
+
+            ctx.fillStyle =
+                boss.color;
+
+            ctx.fillRect(
+                boss.x -
+                boss.size / 2,
+
+                boss.y -
+                boss.size / 2,
+
+                boss.size,
+                boss.size
+            );
+
+        } else {
+
+            drawTri();
+        }
+    }
+
+
+    // Bullet trails
+
+    for (
+        const bullet of bullets
+    ) {
+
+        drawBulletTrail(
+            bullet
+        );
+    }
+
+
+    // Bullets
+
+    for (
+        const bullet of bullets
+    ) {
+
+        ctx.beginPath();
+
+        ctx.arc(
+            bullet.x,
+            bullet.y,
+            bullet.radius,
+            0,
+            Math.PI * 2
+        );
+
+        ctx.fillStyle =
+            "#ffb000";
+
+        ctx.fill();
+    }
+
+
+    // Player rays
+
+    const now =
+        performance.now();
+
+
+    for (
+        const ray of rays
+    ) {
+
+        const age =
+            now -
+            ray.start;
+
+
+        const opacity =
+            Math.max(
+                0,
+                1 -
+                age /
+                RAY_LIFETIME
+            );
+
+
+        const endX =
+            ray.x +
+            ray.dx *
+            ray.length;
+
+        const endY =
+            ray.y +
+            ray.dy *
+            ray.length;
+
+
+        ctx.beginPath();
+
+        ctx.moveTo(
+            ray.x,
+            ray.y
+        );
+
+        ctx.lineTo(
+            endX,
+            endY
+        );
+
+
+        ctx.strokeStyle =
+            `rgba(0,120,255,${opacity})`;
+
+        ctx.lineWidth = 2;
+
+        ctx.stroke();
+    }
+
+
+    // Player
+
+    if (
+        player.hp > 0
+    ) {
+
+        ctx.beginPath();
+
+        ctx.arc(
+            player.x,
+            player.y,
+            player.radius,
+            0,
+            Math.PI * 2
+        );
+
+        ctx.fillStyle =
+            "#8edcff";
+
+        ctx.fill();
+    }
+
+
+    // ========================================================
+    // BOSS HP BAR
+    // ========================================================
+
+    const barWidth =
+        Math.min(
+            700,
+            canvas.width - 40
+        );
+
+    const barHeight = 32;
+
+    const barX =
+        (
+            canvas.width -
+            barWidth
+        ) / 2;
+
+    const barY = 16;
+
+
+    ctx.fillStyle =
+        "#111";
+
+    ctx.beginPath();
+
+    ctx.roundRect(
+        barX - 4,
+        barY - 4,
+        barWidth + 8,
+        barHeight + 8,
+        6
+    );
+
+    ctx.fill();
+
+
+    ctx.strokeStyle =
+        "#777";
+
+    ctx.lineWidth = 2;
+
+    ctx.stroke();
+
+
+    // Empty bar
+
+    ctx.fillStyle =
+        "#1c1c1c";
+
+    ctx.beginPath();
+
+    ctx.roundRect(
+        barX,
+        barY,
+        barWidth,
+        barHeight,
+        4
+    );
+
+    ctx.fill();
+
+
+    // Health
+
+    const healthWidth =
+        barWidth *
+        (
+            boss.hp /
+            boss.maxHP
+        );
+
+
+    if (
+        healthWidth > 0
+    ) {
+
+        ctx.fillStyle =
+            "#e00000";
+
+        ctx.beginPath();
+
+        ctx.roundRect(
+            barX,
+            barY,
+            healthWidth,
+            barHeight,
+            4
+        );
+
+        ctx.fill();
+    }
+
+
+    // Shield
+
+    if (
+        boss.shield > 0
+    ) {
+
+        const shieldWidth =
+            barWidth *
+            (
+                boss.shield /
+                boss.maxHP
+            );
+
+
+        ctx.fillStyle =
+            "white";
+
+        ctx.beginPath();
+
+        ctx.roundRect(
+            barX,
+            barY,
+            shieldWidth,
+            barHeight,
+            4
+        );
+
+        ctx.fill();
+    }
+
+
+    // Boss name
+
+    ctx.fillStyle =
+        "black";
+
+    ctx.font =
+        "bold 19px Arial";
+
+    ctx.textAlign =
+        "center";
+
+    ctx.textBaseline =
+        "middle";
+
+    ctx.shadowColor =
+        "white";
+
+    ctx.shadowBlur = 3;
+
+
+    ctx.fillText(
+        boss.name,
+        canvas.width / 2,
+        barY +
+        barHeight / 2
+    );
+
+
+    ctx.shadowBlur = 0;
+
+
+    // ========================================================
+    // PLAYER HP BAR
+    // ========================================================
+
+    const playerBarX = 20;
+
+    const playerBarY =
+        canvas.height - 34;
+
+    const playerBarWidth = 180;
+
+    const playerBarHeight = 14;
+
+
+    ctx.fillStyle =
+        "#222";
+
+    ctx.fillRect(
+        playerBarX,
+        playerBarY,
+        playerBarWidth,
+        playerBarHeight
+    );
+
+
+    ctx.fillStyle =
+        "#36d65c";
+
+    ctx.fillRect(
+
+        playerBarX,
+        playerBarY,
+
+        playerBarWidth *
+        (
+            player.hp /
+            player.maxHP
+        ),
+
+        playerBarHeight
+    );
+
+
+    ctx.strokeStyle =
+        "white";
+
+    ctx.lineWidth = 1;
+
+    ctx.strokeRect(
+        playerBarX,
+        playerBarY,
+        playerBarWidth,
+        playerBarHeight
+    );
+}
+
+
+// ============================================================
+// END SCREEN
+// ============================================================
+
+function drawEndScreen(text) {
+
+    drawGame();
+
+
+    ctx.fillStyle =
+        "rgba(0,0,0,0.65)";
+
+    ctx.fillRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+
+    ctx.textAlign =
+        "center";
+
+    ctx.textBaseline =
+        "middle";
+
+
+    ctx.fillStyle =
+        "white";
+
+    ctx.font =
+        "bold 42px Arial";
+
+
+    ctx.fillText(
+        text,
+        canvas.width / 2,
+        canvas.height / 2
+    );
+
+
+    ctx.fillStyle =
+        "#888";
+
+    ctx.font =
+        "16px Arial";
+
+
+    ctx.fillText(
+        "Click to return to boss selection",
+        canvas.width / 2,
+        canvas.height / 2 + 55
+    );
+}
+
+
+// ============================================================
+// DRAW
+// ============================================================
+
+function draw() {
+
+    if (
+        gameState ===
+        "menu"
+    ) {
+
+        drawMainMenu();
+
+    } else if (
+        gameState ===
+        "bossSelect"
+    ) {
+
+        drawBossSelect();
+
+    } else if (
+        gameState ===
+        "playing"
+    ) {
+
+        drawGame();
+
+    } else if (
+        gameState ===
+        "dead"
+    ) {
+
+        drawEndScreen(
+            "YOU DIED"
+        );
+
+    } else if (
+        gameState ===
+        "victory"
+    ) {
+
+        drawEndScreen(
+            `${boss.name.toUpperCase()} DEFEATED`
+        );
+    }
+}
+
+
+// ============================================================
+// GAME LOOP
+// ============================================================
+
+function gameLoop() {
+
+    update();
+
+    draw();
+
+    requestAnimationFrame(
+        gameLoop
+    );
+}
+
+gameLoop();
+
+</script>
+
+</body>
+</html>
