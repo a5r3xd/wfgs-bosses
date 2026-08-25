@@ -116,6 +116,7 @@ const difficultyColors = {
 // ============================================================
 
 const player = {
+
     x: 0,
     y: 0,
 
@@ -134,7 +135,7 @@ const player = {
 
 
 // ============================================================
-// TETRAPLEURON IMAGE
+// IMAGES
 // ============================================================
 
 const tetrapleuronImage = new Image();
@@ -149,7 +150,24 @@ tetrapleuronImage.onerror = () => {
     tetrapleuronImageLoaded = false;
 };
 
-tetrapleuronImage.src = "images/tetrapleuron.png";
+tetrapleuronImage.src =
+    "images/tetrapleuron.png";
+
+
+const missileImage = new Image();
+
+let missileImageLoaded = false;
+
+missileImage.onload = () => {
+    missileImageLoaded = true;
+};
+
+missileImage.onerror = () => {
+    missileImageLoaded = false;
+};
+
+missileImage.src =
+    "images/missile.png";
 
 
 // ============================================================
@@ -225,12 +243,31 @@ let boss = bosses.Tetrapleuron;
 
 const rays = [];
 const bullets = [];
+const missiles = [];
 
 const PLAYER_FIRE_INTERVAL = 100;
 const RAY_LIFETIME = 50;
 
 const BOSS_BULLET_SPEED = 3;
 const BOSS_BULLET_DAMAGE = 5;
+
+
+// ============================================================
+// TRI MISSILE SETTINGS
+// ============================================================
+
+const TRI_SPECIAL_INTERVAL = 5000;
+const TRI_SPECIAL_STOP_DURATION = 1000;
+const TRI_MISSILE_LAUNCH_DELAY = 500;
+const TRI_MISSILE_TURN_DURATION = 6000;
+
+const TRI_MISSILE_TURN_SPEED =
+    80 * Math.PI / 180;
+
+const TRI_MISSILE_SPEED = 30;
+
+let triSpecialTimer = 0;
+let triSpecialState = "moving";
 
 
 // ============================================================
@@ -361,6 +398,7 @@ function startBoss(name) {
 
     rays.length = 0;
     bullets.length = 0;
+    missiles.length = 0;
 
     mouseDown = false;
 
@@ -869,6 +907,13 @@ function startTri() {
         performance.now();
 
     chooseTriTarget();
+
+    triSpecialState =
+        "moving";
+
+    triSpecialTimer =
+        performance.now() +
+        TRI_SPECIAL_INTERVAL;
 }
 
 
@@ -1018,7 +1063,14 @@ function chooseTriTarget() {
 // TRI MOVEMENT
 // ============================================================
 
-function updateTriMovement() {
+function updateTriMovement(deltaTime) {
+
+    if (
+        triSpecialState !==
+        "moving"
+    ) {
+        return;
+    }
 
     const dx =
         boss.targetX -
@@ -1034,7 +1086,8 @@ function updateTriMovement() {
 
     if (
         distance <=
-        boss.moveSpeed / 60
+        boss.moveSpeed *
+        deltaTime
     ) {
 
         boss.x =
@@ -1050,14 +1103,14 @@ function updateTriMovement() {
         boss.x +=
             dx /
             distance *
-            boss.moveSpeed /
-            60;
+            boss.moveSpeed *
+            deltaTime;
 
         boss.y +=
             dy /
             distance *
-            boss.moveSpeed /
-            60;
+            boss.moveSpeed *
+            deltaTime;
     }
 }
 
@@ -1147,8 +1200,7 @@ function fireTriAttack() {
 
         const spread =
             (
-                Math.random() -
-                0.5
+                Math.random() - 0.5
             ) *
             (
                 20 *
@@ -1185,22 +1237,302 @@ function updateTriAttack() {
 
 
 // ============================================================
+// TRI SPECIAL / SEEKING MISSILE
+// ============================================================
+
+function launchTriMissile() {
+
+    const angle =
+        Math.atan2(
+            player.y - boss.y,
+            player.x - boss.x
+        );
+
+    missiles.push({
+
+        x: boss.x,
+        y: boss.y,
+
+        angle: angle,
+
+        speed: TRI_MISSILE_SPEED,
+
+        radius: 10,
+
+        launchedAt:
+            performance.now(),
+
+        turnUntil:
+            performance.now() +
+            TRI_MISSILE_TURN_DURATION,
+
+        damage: 20
+    });
+}
+
+
+function startTriSpecial() {
+
+    triSpecialState =
+        "stopped";
+
+    triSpecialTimer =
+        performance.now() +
+        TRI_MISSILE_LAUNCH_DELAY;
+}
+
+
+function updateTriSpecial() {
+
+    const now =
+        performance.now();
+
+
+    // Start special every 5 seconds
+
+    if (
+        triSpecialState === "moving" &&
+        now >= triSpecialTimer
+    ) {
+
+        startTriSpecial();
+    }
+
+
+    // Launch missile 0.5 seconds after stopping
+
+    if (
+        triSpecialState === "stopped" &&
+        now >= triSpecialTimer
+    ) {
+
+        launchTriMissile();
+
+        triSpecialState =
+            "missileLaunched";
+
+        triSpecialTimer =
+            now +
+            (
+                TRI_SPECIAL_STOP_DURATION -
+                TRI_MISSILE_LAUNCH_DELAY
+            );
+    }
+
+
+    // Resume movement and rotation after the full 1 second
+
+    if (
+        triSpecialState ===
+        "missileLaunched" &&
+        now >= triSpecialTimer
+    ) {
+
+        triSpecialState =
+            "moving";
+
+        triSpecialTimer =
+            now +
+            TRI_SPECIAL_INTERVAL;
+    }
+}
+
+
+// ============================================================
 // UPDATE TRI
 // ============================================================
 
-function updateTri() {
+function updateTri(deltaTime) {
 
     if (boss.hp <= 0) {
         return;
     }
 
-    boss.angle +=
-        boss.rotationSpeed /
-        60;
 
-    updateTriMovement();
+    updateTriSpecial();
+
+
+    // Tri does NOT move or rotate during the 1-second stop.
+
+    if (
+        triSpecialState ===
+        "moving"
+    ) {
+
+        boss.angle +=
+            boss.rotationSpeed *
+            deltaTime;
+
+        updateTriMovement(
+            deltaTime
+        );
+    }
+
 
     updateTriAttack();
+}
+
+
+// ============================================================
+// MISSILE HOMING
+// ============================================================
+
+function normalizeAngle(angle) {
+
+    while (
+        angle > Math.PI
+    ) {
+        angle -=
+            Math.PI * 2;
+    }
+
+    while (
+        angle < -Math.PI
+    ) {
+        angle +=
+            Math.PI * 2;
+    }
+
+    return angle;
+}
+
+
+function updateMissiles(deltaTime) {
+
+    const now =
+        performance.now();
+
+
+    for (
+        let i =
+            missiles.length - 1;
+        i >= 0;
+        i--
+    ) {
+
+        const missile =
+            missiles[i];
+
+
+        // Missile can turn for 6 seconds after launch.
+
+        if (
+            now <
+            missile.turnUntil
+        ) {
+
+            const targetAngle =
+                Math.atan2(
+                    player.y -
+                    missile.y,
+
+                    player.x -
+                    missile.x
+                );
+
+
+            const difference =
+                normalizeAngle(
+                    targetAngle -
+                    missile.angle
+                );
+
+
+            const maxTurn =
+                TRI_MISSILE_TURN_SPEED *
+                deltaTime;
+
+
+            if (
+                Math.abs(difference) <=
+                maxTurn
+            ) {
+
+                missile.angle =
+                    targetAngle;
+
+            } else {
+
+                missile.angle +=
+                    Math.sign(difference) *
+                    maxTurn;
+            }
+        }
+
+
+        missile.x +=
+            Math.cos(
+                missile.angle
+            ) *
+            missile.speed *
+            deltaTime;
+
+        missile.y +=
+            Math.sin(
+                missile.angle
+            ) *
+            missile.speed *
+            deltaTime;
+
+
+        // Collision with player
+
+        const distance =
+            Math.hypot(
+                missile.x -
+                player.x,
+
+                missile.y -
+                player.y
+            );
+
+
+        if (
+            distance <=
+            missile.radius +
+            player.radius
+        ) {
+
+            player.hp =
+                Math.max(
+                    0,
+                    player.hp -
+                    missile.damage
+                );
+
+            missiles.splice(
+                i,
+                1
+            );
+
+            continue;
+        }
+
+
+        // Delete only when completely offscreen.
+
+        const margin =
+            missile.radius + 5;
+
+        if (
+            missile.x <
+                -margin ||
+            missile.x >
+                canvas.width +
+                margin ||
+            missile.y <
+                -margin ||
+            missile.y >
+                canvas.height +
+                margin
+        ) {
+
+            missiles.splice(
+                i,
+                1
+            );
+        }
+    }
 }
 
 
@@ -1590,7 +1922,7 @@ function checkBulletCollision(
 // UPDATE BULLETS
 // ============================================================
 
-function updateBullets() {
+function updateBullets(deltaTime) {
 
     for (
         let i =
@@ -1620,10 +1952,14 @@ function updateBullets() {
 
 
         bullet.x +=
-            bullet.vx;
+            bullet.vx *
+            deltaTime *
+            60;
 
         bullet.y +=
-            bullet.vy;
+            bullet.vy *
+            deltaTime *
+            60;
 
 
         if (
@@ -1663,7 +1999,30 @@ function updateBullets() {
 // UPDATE GAME
 // ============================================================
 
+let lastUpdateTime =
+    performance.now();
+
+
 function update() {
+
+    const now =
+        performance.now();
+
+    let deltaTime =
+        (now - lastUpdateTime) /
+        1000;
+
+    lastUpdateTime =
+        now;
+
+    // Prevent giant jumps after tab switching.
+
+    deltaTime =
+        Math.min(
+            deltaTime,
+            0.05
+        );
+
 
     if (
         gameState !==
@@ -1672,6 +2031,10 @@ function update() {
         return;
     }
 
+
+    // ========================================================
+    // PLAYER MOVEMENT
+    // ========================================================
 
     let ax = 0;
     let ay = 0;
@@ -1714,19 +2077,29 @@ function update() {
 
         player.vx +=
             ax *
-            player.acceleration;
+            player.acceleration *
+            deltaTime *
+            60;
 
         player.vy +=
             ay *
-            player.acceleration;
+            player.acceleration *
+            deltaTime *
+            60;
     }
 
 
     player.vx *=
-        player.friction;
+        Math.pow(
+            player.friction,
+            deltaTime * 60
+        );
 
     player.vy *=
-        player.friction;
+        Math.pow(
+            player.friction,
+            deltaTime * 60
+        );
 
 
     const speed =
@@ -1754,11 +2127,17 @@ function update() {
 
 
     player.x +=
-        player.vx;
+        player.vx *
+        deltaTime *
+        60;
 
     player.y +=
-        player.vy;
+        player.vy *
+        deltaTime *
+        60;
 
+
+    // Screen boundaries
 
     if (
         player.x <
@@ -1815,6 +2194,10 @@ function update() {
     resolveBossCollision();
 
 
+    // ========================================================
+    // PLAYER SHOOTING
+    // ========================================================
+
     if (
         mouseDown &&
         player.hp > 0 &&
@@ -1828,6 +2211,10 @@ function update() {
     }
 
 
+    // ========================================================
+    // BOSS UPDATE
+    // ========================================================
+
     if (
         boss.name ===
         "Tetrapleuron"
@@ -1837,9 +2224,15 @@ function update() {
 
     } else {
 
-        updateTri();
+        updateTri(
+            deltaTime
+        );
     }
 
+
+    // ========================================================
+    // RAYS
+    // ========================================================
 
     for (
         const ray of rays
@@ -1847,10 +2240,6 @@ function update() {
 
         checkRayHit(ray);
     }
-
-
-    const now =
-        performance.now();
 
 
     for (
@@ -1874,8 +2263,27 @@ function update() {
     }
 
 
-    updateBullets();
+    // ========================================================
+    // BULLETS
+    // ========================================================
 
+    updateBullets(
+        deltaTime
+    );
+
+
+    // ========================================================
+    // MISSILES
+    // ========================================================
+
+    updateMissiles(
+        deltaTime
+    );
+
+
+    // ========================================================
+    // DEATH
+    // ========================================================
 
     if (
         player.hp <= 0
@@ -1884,6 +2292,10 @@ function update() {
         gameState = "dead";
     }
 
+
+    // ========================================================
+    // VICTORY
+    // ========================================================
 
     if (
         boss.hp <= 0 &&
@@ -2111,8 +2523,6 @@ function drawBossCard(
         "square"
     ) {
 
-        // Use the Tetrapleuron image if it loaded successfully.
-        // Otherwise use the original red square fallback.
         if (
             b.name === "Tetrapleuron" &&
             tetrapleuronImageLoaded
@@ -2120,8 +2530,10 @@ function drawBossCard(
 
             ctx.drawImage(
                 tetrapleuronImage,
+
                 canvas.width / 2 - 30,
                 rect.y + 18,
+
                 60,
                 60
             );
@@ -2304,6 +2716,72 @@ function drawTri() {
 
 
 // ============================================================
+// DRAW MISSILE
+// ============================================================
+
+function drawMissile(
+    missile
+) {
+
+    ctx.save();
+
+    ctx.translate(
+        missile.x,
+        missile.y
+    );
+
+    ctx.rotate(
+        missile.angle
+    );
+
+
+    if (
+        missileImageLoaded
+    ) {
+
+        ctx.drawImage(
+            missileImage,
+            -12,
+            -12,
+            24,
+            24
+        );
+
+    } else {
+
+        // Fallback: dark blue isosceles triangle
+
+        ctx.fillStyle =
+            "#062b55";
+
+        ctx.beginPath();
+
+        ctx.moveTo(
+            14,
+            0
+        );
+
+        ctx.lineTo(
+            -10,
+            -8
+        );
+
+        ctx.lineTo(
+            -10,
+            8
+        );
+
+        ctx.closePath();
+
+        ctx.fill();
+    }
+
+
+    ctx.restore();
+}
+
+
+// ============================================================
 // BULLET TRAILS
 // ============================================================
 
@@ -2374,7 +2852,9 @@ function drawGame() {
     );
 
 
-    // Teleport indicator
+    // ========================================================
+    // TELEPORT INDICATOR
+    // ========================================================
 
     if (
         teleportVisible
@@ -2426,7 +2906,6 @@ function drawGame() {
             "square"
         ) {
 
-            // Tetrapleuron image
             if (
                 boss.name === "Tetrapleuron" &&
                 tetrapleuronImageLoaded
@@ -2447,7 +2926,8 @@ function drawGame() {
 
             } else {
 
-                // Fallback: original red square
+                // Fallback red square
+
                 ctx.fillStyle =
                     boss.color;
 
@@ -2470,7 +2950,9 @@ function drawGame() {
     }
 
 
-    // Bullet trails
+    // ========================================================
+    // BULLET TRAILS
+    // ========================================================
 
     for (
         const bullet of bullets
@@ -2482,7 +2964,9 @@ function drawGame() {
     }
 
 
-    // Bullets
+    // ========================================================
+    // BULLETS
+    // ========================================================
 
     for (
         const bullet of bullets
@@ -2505,7 +2989,23 @@ function drawGame() {
     }
 
 
-    // Player rays
+    // ========================================================
+    // MISSILES
+    // ========================================================
+
+    for (
+        const missile of missiles
+    ) {
+
+        drawMissile(
+            missile
+        );
+    }
+
+
+    // ========================================================
+    // PLAYER RAYS
+    // ========================================================
 
     const now =
         performance.now();
@@ -2562,7 +3062,9 @@ function drawGame() {
     }
 
 
-    // Player
+    // ========================================================
+    // PLAYER
+    // ========================================================
 
     if (
         player.hp > 0
@@ -2630,6 +3132,8 @@ function drawGame() {
     ctx.stroke();
 
 
+    // Empty bar
+
     ctx.fillStyle =
         "#1c1c1c";
 
@@ -2645,6 +3149,8 @@ function drawGame() {
 
     ctx.fill();
 
+
+    // Health
 
     const healthWidth =
         barWidth *
@@ -2675,6 +3181,8 @@ function drawGame() {
     }
 
 
+    // Shield
+
     if (
         boss.shield > 0
     ) {
@@ -2703,6 +3211,8 @@ function drawGame() {
         ctx.fill();
     }
 
+
+    // Boss name
 
     ctx.fillStyle =
         "black";
