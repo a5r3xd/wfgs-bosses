@@ -116,7 +116,6 @@ const difficultyColors = {
 // ============================================================
 
 const player = {
-
     x: 0,
     y: 0,
 
@@ -132,6 +131,25 @@ const player = {
     maxHP: 100,
     hp: 100
 };
+
+
+// ============================================================
+// TETRAPLEURON IMAGE
+// ============================================================
+
+const tetrapleuronImage = new Image();
+
+let tetrapleuronImageLoaded = false;
+
+tetrapleuronImage.onload = () => {
+    tetrapleuronImageLoaded = true;
+};
+
+tetrapleuronImage.onerror = () => {
+    tetrapleuronImageLoaded = false;
+};
+
+tetrapleuronImage.src = "images/tetrapleuron.png";
 
 
 // ============================================================
@@ -1025,7 +1043,6 @@ function updateTriMovement() {
         boss.y =
             boss.targetY;
 
-        // Instantly select another position
         chooseTriTarget();
 
     } else {
@@ -1055,17 +1072,6 @@ function fireTriAttack() {
         getTriVertices();
 
 
-    /*
-        Each triangle side gets one bullet.
-
-        The outward normal of each side is
-        calculated so the bullet travels
-        away from the triangle.
-
-        A random ±10° offset gives a
-        total 20° spread.
-    */
-
     for (
         let i = 0;
         i < 3;
@@ -1088,7 +1094,6 @@ function fireTriAttack() {
             b.y - a.y;
 
 
-        // Perpendicular vector
         let nx =
             sideY;
 
@@ -1106,7 +1111,6 @@ function fireTriAttack() {
         ny /= length;
 
 
-        // Make sure it points outward
         const midpointX =
             (a.x + b.x) / 2;
 
@@ -1141,7 +1145,6 @@ function fireTriAttack() {
             );
 
 
-        // 20 degree total spread
         const spread =
             (
                 Math.random() -
@@ -1191,7 +1194,6 @@ function updateTri() {
         return;
     }
 
-    // 50 degrees per second
     boss.angle +=
         boss.rotationSpeed /
         60;
@@ -1335,8 +1337,6 @@ function checkRayHit(ray) {
             distance;
 
 
-        // Boundary
-
         if (
             x < 0 ||
             x > canvas.width ||
@@ -1353,8 +1353,6 @@ function checkRayHit(ray) {
             return;
         }
 
-
-        // Boss
 
         let hit = false;
 
@@ -1605,16 +1603,12 @@ function updateBullets() {
             bullets[i];
 
 
-        // Add trail point
-
         bullet.trail.unshift({
 
             x: bullet.x,
             y: bullet.y
         });
 
-
-        // Limit trail
 
         if (
             bullet.trail.length >
@@ -1679,10 +1673,6 @@ function update() {
     }
 
 
-    // -------------------------
-    // PLAYER MOVEMENT
-    // -------------------------
-
     let ax = 0;
     let ay = 0;
 
@@ -1703,8 +1693,6 @@ function update() {
         ax += 1;
     }
 
-
-    // Normalize diagonal movement
 
     const movementMagnitude =
         Math.hypot(
@@ -1734,16 +1722,12 @@ function update() {
     }
 
 
-    // Friction
-
     player.vx *=
         player.friction;
 
     player.vy *=
         player.friction;
 
-
-    // Max speed
 
     const speed =
         Math.hypot(
@@ -1775,8 +1759,6 @@ function update() {
     player.y +=
         player.vy;
 
-
-    // Screen boundaries
 
     if (
         player.x <
@@ -1833,8 +1815,6 @@ function update() {
     resolveBossCollision();
 
 
-    // Player shooting
-
     if (
         mouseDown &&
         player.hp > 0 &&
@@ -1847,8 +1827,6 @@ function update() {
         shoot();
     }
 
-
-    // Boss update
 
     if (
         boss.name ===
@@ -1863,8 +1841,6 @@ function update() {
     }
 
 
-    // Rays
-
     for (
         const ray of rays
     ) {
@@ -1872,8 +1848,6 @@ function update() {
         checkRayHit(ray);
     }
 
-
-    // Remove expired rays
 
     const now =
         performance.now();
@@ -1903,8 +1877,6 @@ function update() {
     updateBullets();
 
 
-    // Death
-
     if (
         player.hp <= 0
     ) {
@@ -1912,8 +1884,6 @@ function update() {
         gameState = "dead";
     }
 
-
-    // Victory
 
     if (
         boss.hp <= 0 &&
@@ -1923,8 +1893,6 @@ function update() {
         gameState =
             "victory";
 
-
-        // Tetrapleuron unlocks Tri
 
         if (
             boss.name ===
@@ -2143,15 +2111,33 @@ function drawBossCard(
         "square"
     ) {
 
-        ctx.fillStyle =
-            b.color;
+        // Use the Tetrapleuron image if it loaded successfully.
+        // Otherwise use the original red square fallback.
+        if (
+            b.name === "Tetrapleuron" &&
+            tetrapleuronImageLoaded
+        ) {
 
-        ctx.fillRect(
-            canvas.width / 2 - 30,
-            rect.y + 18,
-            60,
-            60
-        );
+            ctx.drawImage(
+                tetrapleuronImage,
+                canvas.width / 2 - 30,
+                rect.y + 18,
+                60,
+                60
+            );
+
+        } else {
+
+            ctx.fillStyle =
+                b.color;
+
+            ctx.fillRect(
+                canvas.width / 2 - 30,
+                rect.y + 18,
+                60,
+                60
+            );
+        }
 
     } else {
 
@@ -2197,11 +2183,14 @@ function drawBossCard(
 
 
             if (i === 0) {
+
                 ctx.moveTo(
                     x,
                     y
                 );
+
             } else {
+
                 ctx.lineTo(
                     x,
                     y
@@ -2216,8 +2205,6 @@ function drawBossCard(
     }
 
 
-    // Name
-
     ctx.fillStyle =
         "white";
 
@@ -2230,8 +2217,6 @@ function drawBossCard(
         rect.y + 100
     );
 
-
-    // Difficulty
 
     ctx.fillStyle =
         difficultyColors[
@@ -2247,8 +2232,6 @@ function drawBossCard(
         rect.y + 128
     );
 
-
-    // HP
 
     ctx.fillStyle =
         "#777";
@@ -2430,7 +2413,9 @@ function drawGame() {
     }
 
 
-    // Boss
+    // ========================================================
+    // BOSS
+    // ========================================================
 
     if (
         boss.hp > 0
@@ -2441,19 +2426,42 @@ function drawGame() {
             "square"
         ) {
 
-            ctx.fillStyle =
-                boss.color;
+            // Tetrapleuron image
+            if (
+                boss.name === "Tetrapleuron" &&
+                tetrapleuronImageLoaded
+            ) {
 
-            ctx.fillRect(
-                boss.x -
-                boss.size / 2,
+                ctx.drawImage(
+                    tetrapleuronImage,
 
-                boss.y -
-                boss.size / 2,
+                    boss.x -
+                    boss.size / 2,
 
-                boss.size,
-                boss.size
-            );
+                    boss.y -
+                    boss.size / 2,
+
+                    boss.size,
+                    boss.size
+                );
+
+            } else {
+
+                // Fallback: original red square
+                ctx.fillStyle =
+                    boss.color;
+
+                ctx.fillRect(
+                    boss.x -
+                    boss.size / 2,
+
+                    boss.y -
+                    boss.size / 2,
+
+                    boss.size,
+                    boss.size
+                );
+            }
 
         } else {
 
@@ -2622,8 +2630,6 @@ function drawGame() {
     ctx.stroke();
 
 
-    // Empty bar
-
     ctx.fillStyle =
         "#1c1c1c";
 
@@ -2639,8 +2645,6 @@ function drawGame() {
 
     ctx.fill();
 
-
-    // Health
 
     const healthWidth =
         barWidth *
@@ -2671,8 +2675,6 @@ function drawGame() {
     }
 
 
-    // Shield
-
     if (
         boss.shield > 0
     ) {
@@ -2701,8 +2703,6 @@ function drawGame() {
         ctx.fill();
     }
 
-
-    // Boss name
 
     ctx.fillStyle =
         "black";
